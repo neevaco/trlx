@@ -2,6 +2,8 @@ import os
 import warnings
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
+from transformers import AutoConfig
+
 from trlx.data.configs import TRLConfig
 from trlx.data.default_configs import (
     default_ilql_config,
@@ -85,7 +87,11 @@ def train(  # noqa: C901
     )
 
     batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
-    max_prompt_length = config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
+    model_config = AutoConfig.from_pretrained(model_path)
+    if model_config.is_encoder_decoder:
+        max_prompt_length = config.train.seq_length
+    else:
+        max_prompt_length = config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
 
     # Online training against a reward function (e.g. PPO)
     if reward_fn:
