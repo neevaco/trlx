@@ -87,7 +87,7 @@ def train(  # noqa: C901
     )
 
     batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
-    model_config = AutoConfig.from_pretrained(model_path)
+    model_config = AutoConfig.from_pretrained(config.model.model_path)
     if model_config.is_encoder_decoder:
         max_prompt_length = config.train.seq_length
     else:
