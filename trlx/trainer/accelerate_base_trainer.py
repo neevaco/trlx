@@ -35,6 +35,7 @@ from trlx.utils.modeling import (
     get_delta_model_class,
     parse_delta_kwargs,
 )
+from trlx.utils.s3 import save_pretrained_s3
 
 logger = logging.get_logger(__name__)
 
@@ -281,7 +282,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         later use.
 
         Args:
-            directory (str, *optional*): The directory to save the trainer files to.
+            directory (str, *optional*): The directory (local or S3) to save the trainer files to.
                 NOTE: If not specified, the model will be saved to a directory named `hf_model` in the
                 checkpoint directory as specified by the Trainer's config.
             **kwargs: Additional keyword arguments passed to the underlying Hugging Face model's
@@ -291,16 +292,28 @@ class AccelerateRLTrainer(BaseRLTrainer):
             directory = os.path.join(self.config.train.checkpoint_dir, "hf_model")
 
         self.accelerator.wait_for_everyone()
-        self.accelerator.unwrap_model(self.model).save_pretrained(
-            directory,
-            save_function=self.accelerator.save,
-            is_main_process=self.accelerator.is_main_process,
-            state_dict=self.accelerator.get_state_dict(self.model),
+        unwrapped_model = self.accelerator.unwrap_model(self.model)
+
+        model_save_kwargs = {
+            "save_function": self.accelerator.save,
+            "is_main_process": self.accelerator.is_main_process,
+            "state_dict": self.accelerator.get_state_dict(self.model),
             **kwargs,
-        )
+        }
+
+        if directory.startswith("s3://"):
+            save_pretrained_s3(unwrapped_model, **model_save_kwargs)
+        else:
+            self.accelerator.unwrap_model(self.model).save_pretrained(
+                directory,
+                **model_save_kwargs,
+            )
 
         if self.accelerator.is_main_process:
-            self.tokenizer.save_pretrained(directory)
+            if directory.startswith("s3://"):
+                save_pretrained_s3(self.tokenizer)
+            else:
+                self.tokenizer.save_pretrained(directory)
 
     def save(self, directory: Optional[str] = None, **kwargs):
         """Creates a checkpoint of the optimizer, scheduler and model"""
