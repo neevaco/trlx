@@ -1,10 +1,12 @@
 import os
 import boto3
-import logging
 import threading
 import tempfile
 
+import trlx.utils.logging as logging
+
 logger = logging.get_logger(__name__)
+
 
 class _S3TransferCallback:
     def __init__(self, localfile: str) -> None:
@@ -19,9 +21,8 @@ class _S3TransferCallback:
             if (self._total_transferred - self._last_logged) / 1024 // 1024 < 10:
                 return
             if (self._total_transferred // (1024 * 1024)) % 50 == 0:
-                logger.info(
-                    f"Transferred {self._total_transferred/1024//1024} MB to S3 from {self._localfile}"
-                )
+                logger.info(f"Transferred {self._total_transferred/1024//1024} MB to S3 from {self._localfile}")
+
 
 def save_to_s3(local_path: str, remote_path: str) -> None:
     if not remote_path.startswith("s3://"):
@@ -34,9 +35,7 @@ def save_to_s3(local_path: str, remote_path: str) -> None:
     s3 = boto3.resource("s3")
 
     def move_to_s3(localfile: str, remotekey: str) -> None:
-        s3.Bucket(bucket).upload_file(
-            localfile, remotekey, Callback=_S3TransferCallback(localfile)
-        )
+        s3.Bucket(bucket).upload_file(localfile, remotekey, Callback=_S3TransferCallback(localfile))
 
     if os.path.isfile(local_path):
         move_to_s3(local_path, key)
@@ -48,6 +47,7 @@ def save_to_s3(local_path: str, remote_path: str) -> None:
                 logger.info(f"Uploading {localfile} to s3://{bucket}/{remotekey}")
                 move_to_s3(localfile, remotekey)
     logger.info("Finished copying to S3, goodbye")
+
 
 def save_pretrained_s3(s3_path, model_or_tokenizer, **kwargs):
     with tempfile.TemporaryDirectory() as tmpdirname:
