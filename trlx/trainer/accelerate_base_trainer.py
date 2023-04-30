@@ -35,7 +35,7 @@ from trlx.utils.modeling import (
     get_delta_model_class,
     parse_delta_kwargs,
 )
-from trlx.utils.s3 import save_pretrained_s3
+from trlx.utils.s3 import save_pretrained_s3, save_state_s3
 
 logger = logging.get_logger(__name__)
 
@@ -316,8 +316,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 self.tokenizer.save_pretrained(directory)
 
     def save(self, directory: Optional[str] = None, **kwargs):
-        """Creates a checkpoint of the optimizer, scheduler and model"""
-        self.accelerator.save_state(directory or self.config.train.checkpoint_dir, **kwargs)
+        """Creates a checkpoint of the optimizer, scheduler and model
+        and saves it to the specified directory (local or S3)
+        """
+        if directory.startswith("s3://"):
+            save_state_s3(directory, self.accelerator, **kwargs)
+        else:
+            self.accelerator.save_state(directory or self.config.train.checkpoint_dir, **kwargs)
 
     def load(self, directory: Optional[str] = None, **kwargs):
         """Load checkpoint of optimizer, scheduler and a model"""

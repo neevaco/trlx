@@ -53,3 +53,9 @@ def save_pretrained_s3(s3_path, model_or_tokenizer, **kwargs):
     with tempfile.TemporaryDirectory() as tmpdirname:
         model_or_tokenizer.save_pretrained(tmpdirname, **kwargs)
         save_to_s3(tmpdirname, s3_path)
+
+
+def save_state_s3(s3_path, accelerator, **kwargs):
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        accelerator.save_state(tmpdirname, **kwargs)
+        save_to_s3(tmpdirname, s3_path)
