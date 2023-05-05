@@ -283,9 +283,11 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             rollout_generate_time = time()
 
             # Generate samples from the language model (similar to using HuggingFace `generate` method)
+            # samples shape: (batch_size, max_seq_length)
             samples = self.generate(batch["input_ids"], batch["attention_mask"])
             stats["time/rollout_generate"] = time() - rollout_generate_time
 
+            # promp_tensors shape: (batch_size, max_seq_length)
             prompt_tensors = batch.input_ids
             device = samples.device
 
@@ -307,6 +309,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 )
 
                 rollout_score_time = time()
+
+                # all_scores: (num_processes * batch_size,)
                 all_scores = torch.tensor(
                     self.reward_fn(
                         samples=all_str_samples, prompts=all_str_prompts, outputs=all_str_outputs, **metadata
@@ -316,6 +320,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 )
                 stats["time/rollout_score"] = time() - rollout_score_time
 
+                # all_scores: (num_processes, batch_size)
                 all_scores = list(all_scores.reshape(self.accelerator.num_processes, -1).unbind())
             else:
                 all_scores = None
@@ -324,6 +329,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 scores = torch.empty(len(samples), device=device)
                 torch.distributed.scatter(scores, all_scores)
             else:
+                # scores: (batch_size,)
                 scores = all_scores[0].clone().detach()
 
             str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples, append_eos_token=True)
@@ -369,6 +375,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 attention_mask = batch.attention_mask.to(device)
                 prompt_tensors = batch.input_ids.to(device)
                 decoder_attention_mask = sample_outputs.not_equal(self.tokenizer.pad_token_id)
+                # do this since decoder inputs are prefixed with <pad>
                 decoder_attention_mask[:, 0] = 1
                 with torch.no_grad():
                     outputs = self.model(
@@ -377,9 +384,12 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                         decoder_input_ids=sample_outputs,
                         decoder_attention_mask=decoder_attention_mask,
                     )
+                    # logits shape: (batch_size, max_seq_length, hidden_size)
                     logits = outputs.logits
+                    # values shape: (batch_size, max_seq_length)
                     values = outputs.value
                     if hasattr(self.model, "frozen_head"):
+                        # ref_logits shape: (batch_size, max_seq_length, hidden_size)
                         ref_logits = self.model.forward_hydra(
                             input_ids=prompt_tensors,
                             attention_mask=attention_mask,
@@ -388,6 +398,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                             return_dict=True,
                         ).logits
                     else:
+                        # ref_logits shape: (batch_size, max_seq_length, hidden_size)
                         ref_logits = self.ref_model(
                             input_ids=prompt_tensors,
                             attention_mask=attention_mask,
@@ -419,9 +430,11 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                         ref_logits = ref_logits.to(device)
 
             if self.config.model.model_arch_type == "seq2seq":
+                # logprobs, ref_logprobs: (batch_size, ~max_seq_length)
                 logprobs = logprobs_of_labels(logits[:, :-1, :], sample_outputs[:, 1:])
                 ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], sample_outputs[:, 1:])
             else:
+                # logprobs, ref_logprobs: (batch_size, ~max_seq_length)
                 logprobs = logprobs_of_labels(logits[:, :-1, :], all_tokens[:, 1:])
                 ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], all_tokens[:, 1:])
 
@@ -434,6 +447,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             else:
                 start = prompt_tensors.shape[1] - 1
 
+            # log_ratio: (batch_size, max_seq_length)
+            # log_ratio[i,j] = log( p_policy(token_ij) / p_ref(token_ij) )
             log_ratio = (logprobs - ref_logprobs) * attention_mask[:, :-1]
             kl = log_ratio.exp() - 1 - log_ratio
             mean_kl_per_token = kl.mean()
