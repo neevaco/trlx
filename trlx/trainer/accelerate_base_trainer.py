@@ -118,6 +118,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 config_dict_flat["optimizer/kwargs/beta_1"] = config_dict_flat["optimizer/kwargs/betas"][0]
                 config_dict_flat["optimizer/kwargs/beta_2"] = config_dict_flat["optimizer/kwargs/betas"][1]
                 config_dict_flat.pop("optimizer/kwargs/betas", None)
+                for ix, tag in enumerate(config_dict_flat.pop("train/tags")):
+                    config_dict_flat[f"train/tag_{ix}"] = tag
+
                 self.accelerator.init_trackers(
                     project_name=self.config.train.project_name,
                     config=config_dict_flat,
@@ -636,6 +639,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
     @abstractmethod
     def loss(self, batch) -> Tuple[float, Dict]:
         """Compute loss on a batch from `store` and return some statistics"""
+        pass
+
+    @abstractmethod
+    def prepare_learning(self):
+        """Do something before the start of training"""
         pass
 
     @abstractmethod
