@@ -307,7 +307,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         }
 
         if directory.startswith("s3://"):
-            save_pretrained_s3(unwrapped_model, **model_save_kwargs)
+            save_pretrained_s3(directory, unwrapped_model, **model_save_kwargs)
         else:
             self.accelerator.unwrap_model(self.model).save_pretrained(
                 directory,
@@ -316,7 +316,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         if self.accelerator.is_main_process:
             if directory.startswith("s3://"):
-                save_pretrained_s3(self.tokenizer)
+                save_pretrained_s3(directory, self.tokenizer)
             else:
                 self.tokenizer.save_pretrained(directory)
 
